@@ -1,9 +1,7 @@
 # Laravel AWS Cognito Auth
 
-```
 This package is forked from [ArranJacques/laravel-aws-cognito-auth](https://github.com/ArranJacques/laravel-aws-cognito-auth). 
 
-```
 
 A simple authentication package for Laravel 5 for authenticating users in Amazon Cognito User Pools.
 
