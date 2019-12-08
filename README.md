@@ -1,5 +1,10 @@
 # Laravel AWS Cognito Auth
 
+```
+This package is forked from [ArranJacques/laravel-aws-cognito-auth](https://github.com/ArranJacques/laravel-aws-cognito-auth). 
+
+```
+
 A simple authentication package for Laravel 5 for authenticating users in Amazon Cognito User Pools.
 
 This is package works with Laravel's native authentication system and allows the authentication of users that are already registered in Amazon Cognito User Pools. It does not provide functionality for user management, i.e., registering user's into User Pools, password resets, etc.
@@ -32,13 +37,13 @@ This package makes use of the  [aws-sdk-php-laravel](https://github.com/aws/aws-
 Add `pallant/laravel-aws-cognito-auth` to `composer.json` and run `composer update` to pull down the latest version:
 
 ```
-"pallant/laravel-aws-cognito-auth": "~1.0"
+"shady-amir/laravel-aws-cognito-auth": "~1.0"
 ```
 
 Or use `composer require`:
 
 ```
-composer require pallant/laravel-aws-cognito-auth
+composer require shady-amir/laravel-aws-cognito-auth
 ```
 
 Add the service provider and the [aws-sdk-php-laravel](https://github.com/aws/aws-sdk-php-laravel) service provider to the `providers` array in `config/app.php`.
