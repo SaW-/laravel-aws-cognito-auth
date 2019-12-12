@@ -18,7 +18,7 @@ This is package works with Laravel's native authentication system and allows the
     - [Users Table](#users-table)
 - [Usage](#usage)
     - [Authenticating](#authenticating)
-    - [AWS API Gateway](#api-gateway)
+    - [AWS API Gateway](#aws-api-gateway)
     - [Handling Failed Authentication](#handling-failed-authentication)
         - [Methods](#methods)
             - [No Error Handling](#no-error-handling)
@@ -38,7 +38,7 @@ This package makes use of the  [aws-sdk-php-laravel](https://github.com/aws/aws-
 Add `pallant/laravel-aws-cognito-auth` to `composer.json` and run `composer update` to pull down the latest version:
 
 ```
-"shady-amir/laravel-aws-cognito-auth": "~1.0"
+"shady-amir/laravel-aws-cognito-auth": "~1.2.2"
 ```
 
 Or use `composer require`:
@@ -247,6 +247,9 @@ Auth::hasCognitoAccessGroup($group)
 **Example:**
 
 ```php
+use Pallant\LaravelAwsCognitoAuth\Utilities\AwsSecureRequest;
+
+
 $region = env('AWS_GETWAY_API_REGION');
 $version = env('AWS_GETWAY_API_VERSION');
 $IdentityPoolId = env('AWS_GETWAY_API_IDENTITY_POOL_ID');
