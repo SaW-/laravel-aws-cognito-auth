@@ -1,7 +1,13 @@
 {
   "name": "shady-amir/laravel-aws-cognito-auth",
-  "description": "An authentication driver for Laravel for authenticating users in AWS Cognito User Pools",
-  "keywords": ["php", "laravel", "auth", "aws", "cognito"],
+  "description": "An authentication driver for Laravel for authenticating users in AWS Cognito User Pools with group and roles with AWS API gateway helper functions.",
+  "keywords": [
+    "php",
+    "laravel",
+    "auth",
+    "aws",
+    "cognito"
+  ],
   "license": "MIT",
   "authors": [
     {

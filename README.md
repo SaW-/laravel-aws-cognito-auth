@@ -3,9 +3,11 @@
 This package is forked from [ArranJacques/laravel-aws-cognito-auth](https://github.com/ArranJacques/laravel-aws-cognito-auth). 
 
 
-A simple authentication package for Laravel 5 for authenticating users in Amazon Cognito User Pools.
+A simple authentication package for Laravel 5 for authenticating users in Amazon Cognito User Pools with group and roles with AWS API gateway helper functions.
 
-This is package works with Laravel's native authentication system and allows the authentication of users that are already registered in Amazon Cognito User Pools. It does not provide functionality for user management, i.e., registering user's into User Pools, password resets, etc.
+This is package works with Laravel's native authentication system and allows the authentication of users that are already registered in Amazon Cognito User Pools, get user groups and roles and change password for first time login only. It does not provide functionality for user management, i.e., registering user's into User Pools, password resets, etc.
+
+
 
 
 ### Contents
@@ -16,6 +18,7 @@ This is package works with Laravel's native authentication system and allows the
     - [Users Table](#users-table)
 - [Usage](#usage)
     - [Authenticating](#authenticating)
+    - [AWS API Gateway](#api-gateway)
     - [Handling Failed Authentication](#handling-failed-authentication)
         - [Methods](#methods)
             - [No Error Handling](#no-error-handling)
@@ -153,6 +156,8 @@ In Cognito every user has a `username`. When authenticating with Cognito this pa
 
 If you want to use a different attribute to store the user's Cognito username then you can do so by first adding a new field to your `users` table, for example `cognito_username`, and then setting the `username-attribute` in the `config/aws-cognito-auth.php` file to be the name of that field.
 
+Note: It will create user in local database if user if NOT exit.
+
 ## Usage
 
 Once installed and configured authentication works the same as it doesn natively in Laravel. See Laravel's [documentation](https://laravel.com/docs/5.4/authentication) for full details.
@@ -175,6 +180,16 @@ Auth::attempt([
     'email' => 'xxxxx@xxxxx.xx',
     'password' => 'xxxxxxxxxx',
 ], true);
+```
+
+**Change Password for ChallengeName = NEW_PASSWORD_REQUIRED :**
+
+```php
+Auth::confirmPassword([
+    'email' => 'xxxxx@xxxxx.xx',
+    'password' => 'xxxxxxxxxx',
+    'session' => 'xxxxxxxxxx',
+]);
 ```
 
 **Get the authenticated user:**
@@ -209,6 +224,46 @@ Auth::getCognitoTokensExpiryTime();
 
 ```php
 Auth::getCognitoRefreshTokenExpiryTime();
+```
+
+```php
+Auth::getCognitoAccessRoles();
+```
+
+```php
+Auth::getCognitoAccessGroups();
+```
+
+```php
+Auth::hasCognitoAccessRole($role)
+```
+
+```php
+Auth::hasCognitoAccessGroup($group)
+```
+
+### AWS API Gateway
+
+**Example:**
+
+```php
+$region = env('AWS_GETWAY_API_REGION');
+$version = env('AWS_GETWAY_API_VERSION');
+$IdentityPoolId = env('AWS_GETWAY_API_IDENTITY_POOL_ID');
+$Logins = env('AWS_GETWAY_API_LOGINS');
+$awsSecureRequest = new AwsSecureRequest($region, $version, $IdentityPoolId, $Logins);
+
+$host = 'AWS_HOST_API_GATEWAY_WITHOUT_HTTPS';
+$uri = 'URI_TO_API_CALL';
+$QueryString = '';
+$httpRequestMethod = 'GET';
+$postData = [];
+$awsService = 'execute-api'
+$userIdToken = 'idToken'; // Auth::getCognitoIdToken();
+$debug = TRUE;
+
+$result = $this->awsSecureRequest->SignatureAndCallAPI($host, $uri, $awsService, $httpRequestMethod, $QueryString, $postData, $userIdToken,$debug);
+
 ```
 
 ### Handling Failed Authentication
