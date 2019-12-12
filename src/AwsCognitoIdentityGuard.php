@@ -18,6 +18,7 @@ use Illuminate\Contracts\Auth\UserProvider;
 use Illuminate\Contracts\Cookie\QueueingFactory as CookieJar;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Contracts\Session\Session;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
 use RuntimeException;
 use Symfony\Component\HttpFoundation\Request;
@@ -112,6 +113,9 @@ class AwsCognitoIdentityGuard implements StatefulGuard
      */
     protected $cognitoTokens = null;
 
+    const CODE_MISMATCH = 'CodeMismatchException';
+    const EXPIRED_CODE = 'ExpiredCodeException';
+
     /**
      * Create a new authentication guard.
      *
@@ -138,7 +142,7 @@ class AwsCognitoIdentityGuard implements StatefulGuard
         $this->config = $config;
 
         // Setup default error handler.
-        if (isset($this->config['errors']['handler']) AND $this->config['errors']['handler']) {
+        if (isset($this->config['errors']['handler']) and $this->config['errors']['handler']) {
             $this->errorHandler = $this->getErrorHandler($this->config['errors']['handler']);
         }
     }
@@ -168,7 +172,7 @@ class AwsCognitoIdentityGuard implements StatefulGuard
         // request, and if one exists, attempt to retrieve the user using that.
         $user = null;
 
-        if (!is_null($id) AND $user = $this->provider->retrieveById($id)) {
+        if (!is_null($id) and $user = $this->provider->retrieveById($id)) {
 
             if (!$tokens = $this->getCognitoTokensFromSession()) {
                 return null;
@@ -182,7 +186,7 @@ class AwsCognitoIdentityGuard implements StatefulGuard
         // the application. Once we have a user we can return it to the caller.
         $recaller = $this->recaller();
 
-        if (is_null($user) AND !is_null($recaller)) {
+        if (is_null($user) and !is_null($recaller)) {
 
             $user = $this->getUserFromRecaller($recaller);
 
@@ -211,7 +215,7 @@ class AwsCognitoIdentityGuard implements StatefulGuard
      */
     protected function getUserFromRecaller($recaller)
     {
-        if (!$recaller->valid() OR $this->recallAttempted) {
+        if (!$recaller->valid() or $this->recallAttempted) {
             return null;
         }
 
@@ -221,7 +225,8 @@ class AwsCognitoIdentityGuard implements StatefulGuard
         $this->recallAttempted = true;
 
         $this->viaRemember = !is_null($user = $this->provider->retrieveByToken(
-            $recaller->id(), $recaller->token()
+            $recaller->id(),
+            $recaller->token()
         ));
 
         return $user;
@@ -235,7 +240,7 @@ class AwsCognitoIdentityGuard implements StatefulGuard
      */
     protected function getCognitoTokensFromRecaller($recaller)
     {
-        if (!$recaller->valid() OR !$refreshToken = $recaller->cognitoRefreshToken()) {
+        if (!$recaller->valid() or !$refreshToken = $recaller->cognitoRefreshToken()) {
             return null;
         }
 
@@ -338,7 +343,6 @@ class AwsCognitoIdentityGuard implements StatefulGuard
                 'ClientId' => $this->getDefaultAppConfig()['client-id'],
                 'UserPoolId' => $this->config['pool-id'],
             ]);
-
         } catch (CognitoIdentityProviderException $e) {
             return null;
         }
@@ -445,13 +449,25 @@ class AwsCognitoIdentityGuard implements StatefulGuard
         if ($response->successful()) {
 
             $this->cognitoTokens = $this->addTokenExpiryTimes($response->getResponse()['AuthenticationResult']);
+            $idToken = $this->cognitoTokens['IdToken'];
+            $payload = json_decode(base64_decode(explode('.', $idToken)[1]), true);
 
+            // Create User in database if not exit after congito login
+            if (!$user) {
+                $userClass = $this->provider->getModel();
+                $user = new $userClass();
+                $user->email = $payload['email'];
+                $user->save();
+                $this->lastAttempted = $user;
+            }
             $this->storeCognitoTokensInSession($this->cognitoTokens);
 
             $this->login($user, $remember);
 
             $handler = is_null($errorHandler) ? $this->errorHandler : $errorHandler;
             return $handler == AWS_COGNITO_AUTH_RETURN_ATTEMPT ? $response : true;
+        } elseif (!$response->successful() && isset($response->getResponse()['ChallengeName']) && $response->getResponse()['ChallengeName'] == 'NEW_PASSWORD_REQUIRED') {
+            return $response;
         }
 
         // If the authentication attempt fails we will fire an event so that the user
@@ -474,7 +490,7 @@ class AwsCognitoIdentityGuard implements StatefulGuard
      */
     protected function handleError(AuthAttempt $response, $handler = null)
     {
-        if (is_object($handler) AND method_exists($handler, 'handle')) {
+        if (is_object($handler) and method_exists($handler, 'handle')) {
             return $handler->handle(new AuthAttemptException($response));
         } elseif ($handler == AWS_COGNITO_AUTH_THROW_EXCEPTION) {
             throw new AuthAttemptException($response);
@@ -548,7 +564,7 @@ class AwsCognitoIdentityGuard implements StatefulGuard
     protected function attemptCognitoAuthentication(array $credentials)
     {
         if (
-            !$username = array_get($credentials, $this->config['username-attribute']) OR
+            !$username = array_get($credentials, $this->config['username-attribute']) or
             !$password = array_get($credentials, 'password')
         ) {
             return new AuthAttempt(false);
@@ -567,10 +583,40 @@ class AwsCognitoIdentityGuard implements StatefulGuard
             ]);
 
             return new AuthAttempt(!!$response['AuthenticationResult'], $response->toArray());
-
         } catch (CognitoIdentityProviderException $e) {
             return new AuthAttempt(false, ['exception' => $e]);
         }
+    }
+
+    /**
+     * Set a new password for a user that has been flagged as needing a password change.
+     * http://docs.aws.amazon.com/cognito-user-identity-pools/latest/APIReference/API_AdminRespondToAuthChallenge.html.
+     *
+     * @param  string $username
+     * @param  string $password
+     * @param  string $session
+     * @return bool
+     */
+    public function confirmPassword($username, $password, $session)
+    {
+        try {
+            $this->client->AdminRespondToAuthChallenge([
+                'ClientId'           => $this->getDefaultAppConfig()['client-id'],
+                'UserPoolId'         => $this->config['pool-id'],
+                'Session'            => $session,
+                'ChallengeResponses' => [
+                    'NEW_PASSWORD' => $password,
+                    'USERNAME'     => $username,
+                ],
+                'ChallengeName' => 'NEW_PASSWORD_REQUIRED',
+            ]);
+        } catch (CognitoIdentityProviderException $e) {
+            if ($e->getAwsErrorCode() === self::CODE_MISMATCH || $e->getAwsErrorCode() === self::EXPIRED_CODE) {
+                return Password::INVALID_TOKEN;
+            }
+            throw $e;
+        }
+        return Password::PASSWORD_RESET;
     }
 
     /**
@@ -710,8 +756,8 @@ class AwsCognitoIdentityGuard implements StatefulGuard
      */
     protected function clearUserDataFromStorage()
     {
-       $this->clearUserDataFromSession();
-       $this->forgetRecallerCookie();
+        $this->clearUserDataFromSession();
+        $this->forgetRecallerCookie();
     }
 
     /**
@@ -770,7 +816,9 @@ class AwsCognitoIdentityGuard implements StatefulGuard
     {
         if (isset($this->events)) {
             $this->events->dispatch(new Attempting(
-                $this->name, $credentials, $remember
+                $this->name,
+                $credentials,
+                $remember
             ));
         }
     }
@@ -872,6 +920,66 @@ class AwsCognitoIdentityGuard implements StatefulGuard
     public function getCognitoRefreshTokenExpiryTime()
     {
         return array_get($this->cognitoTokens, 'RefreshTokenExpires');
+    }
+
+    /**
+     * Get the roles of the authenticated user's AWS Cognito Id token.
+     *
+     * @return array
+     */
+    public function getCognitoAccessRoles()
+    {
+        $idToken = $this->getCognitoIdToken();
+        $payload = json_decode(base64_decode(explode('.', $idToken)[1]), true);
+        return isset($payload['cognito:roles']) ? $payload['cognito:roles'] : [];
+    }
+
+    /**
+     * Get the groups of the authenticated user's AWS Cognito Id token.
+     *
+     * @return array
+     */
+    public function getCognitoAccessGroups()
+    {
+        $idToken = $this->getCognitoIdToken();
+        $payload = json_decode(base64_decode(explode('.', $idToken)[1]), true);
+        return isset($payload['cognito:groups']) ? $payload['cognito:groups'] : [];
+    }
+
+    /**
+     * check if authenticated user has certain role.
+     *
+     * @return bool
+     */
+    public function hasCognitoAccessRole($role)
+    {
+        $userRoles = $this->getCognitoAccessRoles();
+        if ($userRoles) {
+            foreach ($userRoles as $userRole) {
+                if (stripos($userRole, $role) !== FALSE) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * check if authenticated user has certain group.
+     *
+     * @return bool
+     */
+    public function hasCognitoAccessGroup($group)
+    {
+        $userGroups = $this->getCognitoAccessGroups();
+        if ($userGroups) {
+            foreach ($userGroups as $userGroup) {
+                if (stripos($userGroup, $group) !== FALSE) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**
@@ -1016,5 +1124,4 @@ class AwsCognitoIdentityGuard implements StatefulGuard
 
         return $this;
     }
-
 }

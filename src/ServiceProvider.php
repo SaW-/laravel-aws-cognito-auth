@@ -65,5 +65,4 @@ class ServiceProvider extends BaseServiceProvider
             define('AWS_COGNITO_AUTH_RETURN_ATTEMPT', 'return-attempt');
         }
     }
-
 }
